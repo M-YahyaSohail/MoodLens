@@ -1,0 +1,35 @@
+[project]
+name = "backend"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+authors = [
+    { name = "TaherMustansir1929", email = "eren.jeager1929101@gmail.com" }
+]
+requires-python = ">=3.14"
+dependencies = [
+    "fastapi>=0.162.0",
+    "huggingface-hub>=2.4.0",
+    "numpy>=2.1.0",
+    "openai-whisper>=20250625",
+    "opencv-python>=5.0.0.93",
+    "pandas>=3.1.0",
+    "python-multipart>=0.0.33",
+    "requests>=2.34.2",
+    "scikit-learn>=1.7.2",
+    "streamlit>=1.66.1",
+    "tensorboard>=2.21.0",
+    "torch>=2.15.0",
+    "torchaudio>=2.11.1",
+    "torchvision>=0.29.2",
+    "tqdm>=4.70.1",
+    "transformers>=5.22.1",
+    "uvicorn[standard]>=0.54.0",
+]
+
+[project.scripts]
+backend = "backend:main"
+
+[build-system]
+requires = ["uv_build>=0.12.5,<0.13.0"]
+build-backend = "uv_build"
