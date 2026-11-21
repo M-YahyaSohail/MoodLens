@@ -11,6 +11,9 @@ import argparse
 
 import uvicorn
 from src.deployment.app import ALLOWED_ORIGINS
+from dotenv import load_dotenv
+
+load_dotenv()
 
 
 def main():
