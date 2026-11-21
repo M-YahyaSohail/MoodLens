@@ -6,10 +6,11 @@ import sys
 import tempfile
 import unittest
 
-BACKEND_SRC = Path(__file__).resolve().parents[1] / "src"
-if str(BACKEND_SRC) not in sys.path:
-    sys.path.insert(0, str(BACKEND_SRC))
-
+BACKEND_ROOT = Path(__file__).resolve().parents[1]
+BACKEND_SRC = BACKEND_ROOT / "src"
+for path in (BACKEND_ROOT, BACKEND_SRC, BACKEND_SRC / "training"):
+    if str(path) not in sys.path:
+        sys.path.insert(0, str(path))
 from deployment.analytics_aggregator import (
     export_analytics_json,
     export_utterances_csv,
