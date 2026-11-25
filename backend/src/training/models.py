@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import Any
 
 import torch
 from sklearn.metrics import accuracy_score, precision_score
@@ -10,48 +11,51 @@ from transformers import BertModel
 
 
 class TextEncoder(nn.Module):
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__()
-        self.bert = BertModel.from_pretrained("bert-base-uncased")
+        self.bert: BertModel = BertModel.from_pretrained("bert-base-uncased")
 
         for param in self.bert.parameters():
             param.requires_grad = False
 
-        self.projection = nn.Linear(768, 128)
+        self.projection: nn.Linear = nn.Linear(768, 128)
 
-    def forward(self, input_ids, attention_mask):
+    def forward(
+        self, input_ids: torch.Tensor, attention_mask: torch.Tensor
+    ) -> torch.Tensor:
         # Extract BERT embeddings
-        outputs = self.bert(input_ids=input_ids, attention_mask=attention_mask)
+        outputs: Any = self.bert(input_ids=input_ids, attention_mask=attention_mask)
 
         # Use [CLS] token representation
-        pooler_output = outputs.pooler_output
+        pooler_output: torch.Tensor = outputs.pooler_output
 
         return self.projection(pooler_output)
 
 
 class VideoEncoder(nn.Module):
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__()
         self.backbone = vision_models.video.r3d_18(pretrained=True)
 
         for param in self.backbone.parameters():
             param.requires_grad = False
 
-        num_fts = self.backbone.fc.in_features
+        num_fts: int = self.backbone.fc.in_features
         self.backbone.fc = nn.Sequential(
             nn.Linear(num_fts, 128), nn.ReLU(), nn.Dropout(0.2)
         )
 
-    def forward(self, x):
-        # [batch_size, frames, channels, height, width]->[batch_size, channels, frames, height, width]
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        # [batch_size, frames, channels, height, width]
+        # -> [batch_size, channels, frames, height, width]
         x = x.transpose(1, 2)
         return self.backbone(x)
 
 
 class AudioEncoder(nn.Module):
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__()
-        self.conv_layers = nn.Sequential(
+        self.conv_layers: nn.Sequential = nn.Sequential(
             # Lower level features
             nn.Conv1d(64, 64, kernel_size=3),
             nn.BatchNorm1d(64),
@@ -67,93 +71,103 @@ class AudioEncoder(nn.Module):
         for param in self.conv_layers.parameters():
             param.requires_grad = False
 
-        self.projection = nn.Sequential(nn.Linear(128, 128), nn.ReLU(), nn.Dropout(0.2))
+        self.projection: nn.Sequential = nn.Sequential(
+            nn.Linear(128, 128), nn.ReLU(), nn.Dropout(0.2)
+        )
 
-    def forward(self, x):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         x = x.squeeze(1)
 
-        features = self.conv_layers(x)
+        features: torch.Tensor = self.conv_layers(x)
         # Features output: [batch_size, 128, 1]
 
         return self.projection(features.squeeze(-1))
 
 
 class MultimodalSentimentModel(nn.Module):
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__()
 
         # Encoders
-        self.text_encoder = TextEncoder()
-        self.video_encoder = VideoEncoder()
-        self.audio_encoder = AudioEncoder()
+        self.text_encoder: TextEncoder = TextEncoder()
+        self.video_encoder: VideoEncoder = VideoEncoder()
+        self.audio_encoder: AudioEncoder = AudioEncoder()
 
         # Fusion layer
-        self.fusion_layer = nn.Sequential(
-            nn.Linear(128 * 3, 256), nn.BatchNorm1d(256), nn.ReLU(), nn.Dropout(0.3)
+        self.fusion_layer: nn.Sequential = nn.Sequential(
+            nn.Linear(128 * 3, 256),
+            nn.BatchNorm1d(256),
+            nn.ReLU(),
+            nn.Dropout(0.3),
         )
 
         # Classification heads
-        self.emotion_classifier = nn.Sequential(
+        self.emotion_classifier: nn.Sequential = nn.Sequential(
             nn.Linear(256, 64),
             nn.ReLU(),
             nn.Dropout(0.2),
             nn.Linear(64, 7),  # Sadness, anger
         )
 
-        self.sentiment_classifier = nn.Sequential(
+        self.sentiment_classifier: nn.Sequential = nn.Sequential(
             nn.Linear(256, 64),
             nn.ReLU(),
             nn.Dropout(0.2),
             nn.Linear(64, 3),  # Negative, positive, neutral
         )
 
-    def forward(self, text_inputs, video_frames, audio_features):
-        text_features = self.text_encoder(
+    def forward(
+        self,
+        text_inputs: dict[str, torch.Tensor],
+        video_frames: torch.Tensor,
+        audio_features: torch.Tensor,
+    ) -> dict[str, torch.Tensor]:
+        text_features: torch.Tensor = self.text_encoder(
             text_inputs["input_ids"],
             text_inputs["attention_mask"],
         )
-        video_features = self.video_encoder(video_frames)
-        audio_features = self.audio_encoder(audio_features)
+        video_features: torch.Tensor = self.video_encoder(video_frames)
+        audio_encoded: torch.Tensor = self.audio_encoder(audio_features)
 
         # Concatenate multimodal features
-        combined_features = torch.cat(
-            [text_features, video_features, audio_features], dim=1
+        combined_features: torch.Tensor = torch.cat(
+            [text_features, video_features, audio_encoded], dim=1
         )  # [batch_size, 128 * 3]
 
-        fused_features = self.fusion_layer(combined_features)
+        fused_features: torch.Tensor = self.fusion_layer(combined_features)
 
-        emotion_output = self.emotion_classifier(fused_features)
-        sentiment_output = self.sentiment_classifier(fused_features)
+        emotion_output: torch.Tensor = self.emotion_classifier(fused_features)
+        sentiment_output: torch.Tensor = self.sentiment_classifier(fused_features)
 
         return {"emotions": emotion_output, "sentiments": sentiment_output}
 
 
-def compute_class_weights(dataset):
-    emotion_counts = torch.zeros(7)
-    sentiment_counts = torch.zeros(3)
-    skipped = 0
-    total = len(dataset)
+def compute_class_weights(dataset: MELDDataset) -> tuple[torch.Tensor, torch.Tensor]:
+    emotion_counts: torch.Tensor = torch.zeros(7)
+    sentiment_counts: torch.Tensor = torch.zeros(3)
+    skipped: int = 0
+    total: int = len(dataset)
 
     print("\nCounting class distributions...")
     for i in range(total):
-        sample = dataset[i]
+        sample: dict[str, Any] | None = dataset[i]
 
         if sample is None:
             skipped += 1
             continue
 
-        emotion_label = sample["emotion_label"]
-        sentiment_label = sample["sentiment_label"]
+        emotion_label: int = int(sample["emotion_label"])
+        sentiment_label: int = int(sample["sentiment_label"])
 
         emotion_counts[emotion_label] += 1
         sentiment_counts[sentiment_label] += 1
 
-    valid = total - skipped
+    valid: int = total - skipped
     print(f"Skipped samples: {skipped}/{total}")
 
     print("\nClass distribution")
     print("Emotions:")
-    emotion_map = {
+    emotion_map: dict[int, str] = {
         0: "anger",
         1: "disgust",
         2: "fear",
@@ -163,16 +177,16 @@ def compute_class_weights(dataset):
         6: "surprise",
     }
     for i, count in enumerate(emotion_counts):
-        print(f"{emotion_map[i]}: {count / valid:.2f}")
+        print(f"{emotion_map[i]}: {float(count) / valid:.2f}")
 
     print("\nSentiments:")
-    sentiment_map = {0: "negative", 1: "neutral", 2: "positive"}
+    sentiment_map: dict[int, str] = {0: "negative", 1: "neutral", 2: "positive"}
     for i, count in enumerate(sentiment_counts):
-        print(f"{sentiment_map[i]}: {count / valid:.2f}")
+        print(f"{sentiment_map[i]}: {float(count) / valid:.2f}")
 
     # Calculate class weights
-    emotion_weights = 1.0 / emotion_counts
-    sentiment_weights = 1.0 / sentiment_counts
+    emotion_weights: torch.Tensor = 1.0 / emotion_counts
+    sentiment_weights: torch.Tensor = 1.0 / sentiment_counts
 
     # Normalize weights
     emotion_weights = emotion_weights / emotion_weights.sum()
@@ -182,26 +196,28 @@ def compute_class_weights(dataset):
 
 
 class MultimodalTrainer:
-    def __init__(self, model, train_loader, val_loader):
-        self.model = model
-        self.train_loader = train_loader
-        self.val_loader = val_loader
+    def __init__(
+        self, model: MultimodalSentimentModel, train_loader: Any, val_loader: Any
+    ) -> None:
+        self.model: MultimodalSentimentModel = model
+        self.train_loader: Any = train_loader
+        self.val_loader: Any = val_loader
 
-        # Log dataset sized
-        train_size = len(train_loader.dataset)
-        val_size = len(val_loader.dataset)
+        # Log dataset sizes
+        train_size: int = len(train_loader.dataset)
+        val_size: int = len(val_loader.dataset)
         print("\nDataset sizes:")
         print(f"Training samples: {train_size:,}")
         print(f"Validation samples: {val_size:,}")
         print(f"Batches per epoch: {len(train_loader):,}")
 
-        timestamp = datetime.now().strftime("%b%d_%H-%M-%S")  # Dec17_14-22-35
-        log_dir = f"runs/run_{timestamp}"
-        self.writer = SummaryWriter(log_dir=log_dir)
-        self.global_step = 0
+        timestamp: str = datetime.now().strftime("%b%d_%H-%M-%S")  # Dec17_14-22-35
+        log_dir: str = f"runs/run_{timestamp}"
+        self.writer: SummaryWriter = SummaryWriter(log_dir=log_dir)
+        self.global_step: int = 0
 
         # Very high: 1, high: 0.1-0.01, medium: 1e-1, low: 1e-4, very low: 1e-5
-        self.optimizer = torch.optim.Adam(
+        self.optimizer: torch.optim.Adam = torch.optim.Adam(
             [
                 {"params": model.text_encoder.parameters(), "lr": 8e-6},
                 {"params": model.video_encoder.parameters(), "lr": 8e-5},
@@ -213,44 +229,58 @@ class MultimodalTrainer:
             weight_decay=1e-5,
         )
 
-        self.scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-            self.optimizer, mode="min", factor=0.1, patience=2
+        self.scheduler: torch.optim.lr_scheduler.ReduceLROnPlateau = (
+            torch.optim.lr_scheduler.ReduceLROnPlateau(
+                self.optimizer, mode="min", factor=0.1, patience=2
+            )
         )
 
-        self.current_train_losses = None
+        self.current_train_losses: dict[str, float] | None = None
 
-        # Calculate calss weights
+        # Calculate class weights
         print("\nCalculating class weights...")
-        emotion_weights, sentiment_weights = compute_class_weights(train_loader.dataset)
+        emotion_weights, sentiment_weights = compute_class_weights(
+            train_loader.dataset
+        )
 
-        device = next(model.parameters()).device
+        device: torch.device = next(model.parameters()).device
 
-        self.emotion_weights = emotion_weights.to(device)
-        self.sentiment_weights = sentiment_weights.to(device)
+        self.emotion_weights: torch.Tensor = emotion_weights.to(device)
+        self.sentiment_weights: torch.Tensor = sentiment_weights.to(device)
 
         print(f"Emotion weights on device: {self.emotion_weights.device}")
         print(f"Sentiments weights on device: {self.sentiment_weights.device}")
 
-        self.emotion_criterion = nn.CrossEntropyLoss(
+        self.emotion_criterion: nn.CrossEntropyLoss = nn.CrossEntropyLoss(
             label_smoothing=0.05, weight=self.emotion_weights
         )
 
-        self.sentiment_criterion = nn.CrossEntropyLoss(
+        self.sentiment_criterion: nn.CrossEntropyLoss = nn.CrossEntropyLoss(
             label_smoothing=0.05, weight=self.sentiment_weights
         )
 
-    def log_metrics(self, losses, metrics=None, phase="train"):
+    def log_metrics(
+        self,
+        losses: dict[str, float],
+        metrics: dict[str, float] | None = None,
+        phase: str = "train",
+    ) -> None:
         if phase == "train":
             self.current_train_losses = losses
         else:  # Validation phase
+            train_losses = self.current_train_losses
+            if train_losses is None:
+                raise RuntimeError("train_epoch must be called before evaluate")
             self.writer.add_scalar(
-                "loss/total/train", self.current_train_losses["total"], self.global_step
+                "loss/total/train", train_losses["total"], self.global_step
             )
-            self.writer.add_scalar("loss/total/val", losses["total"], self.global_step)
+            self.writer.add_scalar(
+                "loss/total/val", losses["total"], self.global_step
+            )
 
             self.writer.add_scalar(
                 "loss/emotion/train",
-                self.current_train_losses["emotion"],
+                train_losses["emotion"],
                 self.global_step,
             )
             self.writer.add_scalar(
@@ -259,7 +289,7 @@ class MultimodalTrainer:
 
             self.writer.add_scalar(
                 "loss/sentiment/train",
-                self.current_train_losses["sentiment"],
+                train_losses["sentiment"],
                 self.global_step,
             )
             self.writer.add_scalar(
@@ -288,33 +318,37 @@ class MultimodalTrainer:
                 self.global_step,
             )
 
-    def train_epoch(self):
+    def train_epoch(self) -> dict[str, float]:
         self.model.train()
-        running_loss = {"total": 0, "emotion": 0, "sentiment": 0}
+        running_loss: dict[str, float] = {"total": 0.0, "emotion": 0.0, "sentiment": 0.0}
 
         for batch in self.train_loader:
-            device = next(self.model.parameters()).device
-            text_inputs = {
+            device: torch.device = next(self.model.parameters()).device
+            text_inputs: dict[str, torch.Tensor] = {
                 "input_ids": batch["text_inputs"]["input_ids"].to(device),
                 "attention_mask": batch["text_inputs"]["attention_mask"].to(device),
             }
-            video_frames = batch["video_frames"].to(device)
-            audio_features = batch["audio_features"].to(device)
-            emotion_labels = batch["emotion_label"].to(device)
-            sentiment_labels = batch["sentiment_label"].to(device)
+            video_frames: torch.Tensor = batch["video_frames"].to(device)
+            audio_features: torch.Tensor = batch["audio_features"].to(device)
+            emotion_labels: torch.Tensor = batch["emotion_label"].to(device)
+            sentiment_labels: torch.Tensor = batch["sentiment_label"].to(device)
 
             # Zero gradient
             self.optimizer.zero_grad()
 
             # Forward pass
-            outputs = self.model(text_inputs, video_frames, audio_features)
+            outputs: dict[str, torch.Tensor] = self.model(
+                text_inputs, video_frames, audio_features
+            )
 
             # Calculate losses using raw logits
-            emotion_loss = self.emotion_criterion(outputs["emotions"], emotion_labels)
-            sentiment_loss = self.sentiment_criterion(
+            emotion_loss: torch.Tensor = self.emotion_criterion(
+                outputs["emotions"], emotion_labels
+            )
+            sentiment_loss: torch.Tensor = self.sentiment_criterion(
                 outputs["sentiments"], sentiment_labels
             )
-            total_loss = emotion_loss + sentiment_loss
+            total_loss: torch.Tensor = emotion_loss + sentiment_loss
 
             # Backward pass. Calculate gradients
             total_loss.backward()
@@ -341,61 +375,75 @@ class MultimodalTrainer:
 
         return {k: v / len(self.train_loader) for k, v in running_loss.items()}
 
-    def evaluate(self, data_loader, phase="val"):
+    def evaluate(
+        self, data_loader: Any, phase: str = "val"
+    ) -> tuple[dict[str, float], dict[str, float]]:
         self.model.eval()
-        losses = {"total": 0, "emotion": 0, "sentiment": 0}
-        all_emotion_preds = []
-        all_emotion_labels = []
-        all_sentiment_preds = []
-        all_sentiment_labels = []
+        losses: dict[str, float] = {"total": 0.0, "emotion": 0.0, "sentiment": 0.0}
+        all_emotion_preds: list[int] = []
+        all_emotion_labels: list[int] = []
+        all_sentiment_preds: list[int] = []
+        all_sentiment_labels: list[int] = []
 
         with torch.inference_mode():
             for batch in data_loader:
-                device = next(self.model.parameters()).device
-                text_inputs = {
+                device: torch.device = next(self.model.parameters()).device
+                text_inputs: dict[str, torch.Tensor] = {
                     "input_ids": batch["text_inputs"]["input_ids"].to(device),
                     "attention_mask": batch["text_inputs"]["attention_mask"].to(device),
                 }
-                video_frames = batch["video_frames"].to(device)
-                audio_features = batch["audio_features"].to(device)
-                emotion_labels = batch["emotion_label"].to(device)
-                sentiment_labels = batch["sentiment_label"].to(device)
+                video_frames: torch.Tensor = batch["video_frames"].to(device)
+                audio_features: torch.Tensor = batch["audio_features"].to(device)
+                emotion_labels: torch.Tensor = batch["emotion_label"].to(device)
+                sentiment_labels: torch.Tensor = batch["sentiment_label"].to(device)
 
-                outputs = self.model(text_inputs, video_frames, audio_features)
+                outputs: dict[str, torch.Tensor] = self.model(
+                    text_inputs, video_frames, audio_features
+                )
 
-                emotion_loss = self.emotion_criterion(
+                emotion_loss: torch.Tensor = self.emotion_criterion(
                     outputs["emotions"], emotion_labels
                 )
-                sentiment_loss = self.sentiment_criterion(
+                sentiment_loss: torch.Tensor = self.sentiment_criterion(
                     outputs["sentiments"], sentiment_labels
                 )
-                total_loss = emotion_loss + sentiment_loss
+                total_loss: torch.Tensor = emotion_loss + sentiment_loss
 
                 all_emotion_preds.extend(
-                    outputs["emotions"].argmax(dim=1).cpu().numpy()
+                    outputs["emotions"].argmax(dim=1).cpu().tolist()
                 )
-                all_emotion_labels.extend(emotion_labels.cpu().numpy())
+                all_emotion_labels.extend(emotion_labels.cpu().tolist())
                 all_sentiment_preds.extend(
-                    outputs["sentiments"].argmax(dim=1).cpu().numpy()
+                    outputs["sentiments"].argmax(dim=1).cpu().tolist()
                 )
-                all_sentiment_labels.extend(sentiment_labels.cpu().numpy())
+                all_sentiment_labels.extend(sentiment_labels.cpu().tolist())
 
                 # Track losses
                 losses["total"] += total_loss.item()
                 losses["emotion"] += emotion_loss.item()
                 losses["sentiment"] += sentiment_loss.item()
 
-        avg_loss = {k: v / len(data_loader) for k, v in losses.items()}
+        avg_loss: dict[str, float] = {
+            k: v / len(data_loader) for k, v in losses.items()
+        }
 
         # Compute the precision and accuracy
-        emotion_precision = precision_score(
-            all_emotion_labels, all_emotion_preds, average="weighted"
+        emotion_precision: float = float(
+            precision_score(
+                all_emotion_labels, all_emotion_preds, average="weighted"
+            )
         )
-        emotion_accuracy = accuracy_score(all_emotion_labels, all_emotion_preds)
-        sentiment_precision = precision_score(
-            all_sentiment_labels, all_sentiment_preds, average="weighted"
+        emotion_accuracy: float = float(
+            accuracy_score(all_emotion_labels, all_emotion_preds)
         )
-        sentiment_accuracy = accuracy_score(all_sentiment_labels, all_sentiment_preds)
+        sentiment_precision: float = float(
+            precision_score(
+                all_sentiment_labels, all_sentiment_preds, average="weighted"
+            )
+        )
+        sentiment_accuracy: float = float(
+            accuracy_score(all_sentiment_labels, all_sentiment_preds)
+        )
 
         self.log_metrics(
             avg_loss,
@@ -420,29 +468,29 @@ class MultimodalTrainer:
 
 
 if __name__ == "__main__":
-    dataset = MELDDataset(
+    dataset: MELDDataset = MELDDataset(
         "../dataset/train/train_sent_emo.csv", "../dataset/train/train_splits"
     )
 
-    sample = dataset[0]
+    sample: dict[str, Any] | None = dataset[0]
 
-    model = MultimodalSentimentModel()
+    model: MultimodalSentimentModel = MultimodalSentimentModel()
     model.eval()
 
-    text_inputs = {
+    text_inputs: dict[str, torch.Tensor] = {
         "input_ids": sample["text_inputs"]["input_ids"].unsqueeze(0),
         "attention_mask": sample["text_inputs"]["attention_mask"].unsqueeze(0),
     }
-    video_frames = sample["video_frames"].unsqueeze(0)
-    audio_features = sample["audio_features"].unsqueeze(0)
+    video_frames: torch.Tensor = sample["video_frames"].unsqueeze(0)
+    audio_features: torch.Tensor = sample["audio_features"].unsqueeze(0)
 
     with torch.inference_mode():
-        outputs = model(text_inputs, video_frames, audio_features)
+        outputs: dict[str, torch.Tensor] = model(text_inputs, video_frames, audio_features)
 
-        emotion_probs = torch.softmax(outputs["emotions"], dim=1)[0]
-        sentiment_probs = torch.softmax(outputs["sentiments"], dim=1)[0]
+        emotion_probs: torch.Tensor = torch.softmax(outputs["emotions"], dim=1)[0]
+        sentiment_probs: torch.Tensor = torch.softmax(outputs["sentiments"], dim=1)[0]
 
-    emotion_map = {
+    emotion_map: dict[int, str] = {
         0: "anger",
         1: "disgust",
         2: "fear",
@@ -452,7 +500,7 @@ if __name__ == "__main__":
         6: "surprise",
     }
 
-    sentiment_map = {0: "negative", 1: "neutral", 2: "positive"}
+    sentiment_map: dict[int, str] = {0: "negative", 1: "neutral", 2: "positive"}
 
     for i, prob in enumerate(emotion_probs):
         print(f"{emotion_map[i]}: {prob:.2f}")
