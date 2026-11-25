@@ -115,6 +115,8 @@ export default function Page() {
     [],
   )
 
+  const buttonLabel = file ? `Change file (${file.name})` : "Choose video file"
+
   const handleChooseFile = useCallback(() => {
     fileInputRef.current?.click()
   }, [])
@@ -195,7 +197,8 @@ export default function Page() {
   const isLoading = isAnalyzing && view === "analyzing"
 
   return (
-    <div className="flex max-w-5xl flex-col gap-6 px-6 py-8 mx-auto">
+    <>
+      <div className="flex max-w-5xl flex-col gap-6 px-6 py-8 mx-auto">
       {/* Header */}
       <div className="flex flex-col gap-2">
         <div className="flex items-center gap-2">
@@ -274,23 +277,20 @@ export default function Page() {
               disabled={isLoading}
               className="w-full md:w-auto"
             >
-              {file ? `Change file ({file.name})` : "Choose video file"}
+              {buttonLabel}
             </Button>
           </div>
 
           {file && (
             <>
               <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                <Spinner className="size-3.5" />
-                <span>{file.name}</span>
+                <span className="text-xs font-medium">{file.name}</span>
               </div>
 
               <AspectRatio ratio={16 / 9} className="border border-border rounded-none bg-muted overflow-hidden">
                 <video
                   src={URL.createObjectURL(file)}
-                  autoPlay
-                  muted
-                  playsInline
+                  controls
                   className="size-full object-cover"
                 />
               </AspectRatio>
@@ -481,5 +481,33 @@ export default function Page() {
         </Card>
       )}
     </div>
+
+    {/* Full-width footer */}
+    <footer className="w-full border-t border-background/50 bg-background/80 backdrop-blur-sm px-6 py-6">
+      <div className="max-w-5xl mx-auto">
+        <Separator />
+        <Card>
+          <CardContent className="py-4 text-center">
+            <p className="text-xs text-muted-foreground mb-1">
+              🏆MoodLens - {" "}
+              <span className="font-medium">PAI (Programming for AI)</span>
+            </p>
+            <p className="text-xs text-muted-foreground mb-1">
+              <span className="font-medium">🏦FAST NUCES Karachi</span>
+            </p>
+            <p className="text-xs text-muted-foreground">
+              Team members:
+              <br />
+              <span className="font-medium">😎Taher Mustansir</span> — 25K-0119
+              <br />
+              <span className="font-medium">🥸Abdullah Ahmad</span> — 25K-0084
+              <br />
+              <span className="font-medium">🥴M. Yahya Sohail</span> — 25K-0078
+            </p>
+          </CardContent>
+        </Card>
+      </div>
+    </footer>
+    </>
   )
 }

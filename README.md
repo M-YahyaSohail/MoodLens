@@ -248,6 +248,9 @@ MoodLens/
 ```bash
 cd backend
 uv sync
+
+# Start the API (default: http://127.0.0.1:8000)
+$env:MOODLENS_ALLOWED_ORIGINS="http://localhost:3000,http://127.0.0.1:3000"
 uv run python main.py
 ```
 
