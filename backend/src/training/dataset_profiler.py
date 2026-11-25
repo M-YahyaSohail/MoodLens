@@ -1,12 +1,11 @@
 import argparse
-from collections import Counter, defaultdict
 import csv
 import json
 import math
-from pathlib import Path
 import subprocess
+from collections import Counter, defaultdict
+from pathlib import Path
 from typing import Any
-
 
 EMOTION_ORDER = ["anger", "disgust", "fear", "joy", "neutral", "sadness", "surprise"]
 SENTIMENT_ORDER = ["negative", "neutral", "positive"]
@@ -77,12 +76,9 @@ def compute_inverse_weights(counts: Counter[str], label_order: list[str]) -> dic
 
     total_weight = sum(raw_weights.values())
     if total_weight <= 0:
-        return {label: 0.0 for label in label_order}
+        return dict.fromkeys(label_order, 0.0)
 
-    return {
-        label: round(weight / total_weight, 4)
-        for label, weight in raw_weights.items()
-    }
+    return {label: round(weight / total_weight, 4) for label, weight in raw_weights.items()}
 
 
 def profile_meld_split(
@@ -154,9 +150,9 @@ def profile_meld_split(
                 "ratio": round(emotion_counts.get(label, 0) / total_rows, 4)
                 if total_rows > 0
                 else 0.0,
-                "normalized_class_weight": compute_inverse_weights(
-                    emotion_counts, EMOTION_ORDER
-                )[label],
+                "normalized_class_weight": compute_inverse_weights(emotion_counts, EMOTION_ORDER)[
+                    label
+                ],
             }
             for label in EMOTION_ORDER
         },

@@ -30,9 +30,9 @@ import os
 import tempfile
 import time
 from collections import defaultdict, deque
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator
 from concurrent.futures import ThreadPoolExecutor
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 from typing import Any
 
 import cv2
@@ -130,9 +130,7 @@ async def save_upload_to_temp_file(file: UploadFile) -> str:
     if len(first_chunk) > MAX_UPLOAD_BYTES:
         os.close(fd)
         os.remove(temp_path)
-        raise VideoTooLargeError(
-            f"Uploaded file exceeds the {MAX_UPLOAD_SIZE_MB} MB limit"
-        )
+        raise VideoTooLargeError(f"Uploaded file exceeds the {MAX_UPLOAD_SIZE_MB} MB limit")
 
     total: int = len(first_chunk)
     try:
@@ -146,10 +144,8 @@ async def save_upload_to_temp_file(file: UploadFile) -> str:
                     )
                 out.write(chunk)
     except BaseException:
-        try:
+        with suppress(OSError):
             os.remove(temp_path)
-        except OSError:
-            pass
         raise
 
     logger.info("Received upload of %.1f MB", total / (1024 * 1024))
@@ -212,18 +208,19 @@ _rate_limiter: SlidingWindowRateLimiter = SlidingWindowRateLimiter(
 
 
 async def _run_inference(video_path: str) -> dict[str, Any]:
-    if _MODEL is None:
+    model = _MODEL
+    if model is None:
         raise RuntimeError("Model not loaded")
 
-    def _worker() -> dict[str, Any]:
-        return predict_fn({"video_path": video_path}, _MODEL)
+    def _worker(m: dict[str, Any]) -> dict[str, Any]:
+        return predict_fn({"video_path": video_path}, m)
 
     loop: asyncio.AbstractEventLoop = asyncio.get_running_loop()
-    return await loop.run_in_executor(_inference_executor, _worker)
+    return await loop.run_in_executor(_inference_executor, _worker, model)
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     global _MODEL
 
     if not ensure_ffmpeg():
@@ -271,9 +268,7 @@ async def health() -> dict[str, str | bool]:
 
 
 @app.post("/analyze/video")
-async def analyze_video(
-    request: Request, video: UploadFile = File(...)
-) -> JSONResponse:
+async def analyze_video(request: Request, video: UploadFile = File(...)) -> JSONResponse:
     # 1. Per-client rate limiting
     client_key: str = request.client.host if request.client else "unknown"
     if not _rate_limiter.allow(client_key):
@@ -290,22 +285,16 @@ async def analyze_video(
             if int(declared_length) > MAX_UPLOAD_BYTES + 2 * 1024 * 1024:
                 raise HTTPException(
                     status_code=413,
-                    detail=(
-                        f"Request body exceeds the {MAX_UPLOAD_SIZE_MB} MB upload limit"
-                    ),
+                    detail=(f"Request body exceeds the {MAX_UPLOAD_SIZE_MB} MB upload limit"),
                 )
         except ValueError:
-            raise HTTPException(
-                status_code=400, detail="Malformed Content-Length header"
-            )
+            raise HTTPException(status_code=400, detail="Malformed Content-Length header")
 
     # 3. Fail fast if all inference capacity is taken
     if _inference_slots.locked() or _MODEL is None:
         raise HTTPException(
             status_code=503,
-            detail=(
-                "Server busy: the analysis pipeline is at capacity. Try again shortly."
-            ),
+            detail=("Server busy: the analysis pipeline is at capacity. Try again shortly."),
             headers={"Retry-After": "30"},
         )
 
@@ -321,9 +310,7 @@ async def analyze_video(
             raise VideoTooLongError(
                 f"Video is {duration:.0f}s; the limit is {MAX_VIDEO_DURATION_SEC}s"
             )
-        logger.info(
-            "Analyzing video of %.1f seconds for client %s", duration, client_key
-        )
+        logger.info("Analyzing video of %.1f seconds for client %s", duration, client_key)
 
         # 6. Inference with concurrency limit and hard timeout
         async with _inference_slots:
@@ -339,7 +326,7 @@ async def analyze_video(
         raise HTTPException(status_code=422, detail=str(e))
     except UploadValidationError as e:
         raise HTTPException(status_code=400, detail=str(e))
-    except asyncio.TimeoutError:
+    except TimeoutError:
         logger.error("Inference timed out after %ss", INFERENCE_TIMEOUT_SEC)
         raise HTTPException(
             status_code=504,
@@ -350,9 +337,7 @@ async def analyze_video(
     except Exception:
         # Never leak library stack traces to clients - log them instead
         logger.exception("Unhandled error while processing upload")
-        raise HTTPException(
-            status_code=500, detail="Internal error while processing the video"
-        )
+        raise HTTPException(status_code=500, detail="Internal error while processing the video")
     finally:
         # 7. Temporary file is always cleaned up, success or failure
         if temp_path and os.path.exists(temp_path):

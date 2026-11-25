@@ -16,9 +16,7 @@ class TextEncoder(nn.Module):
 
         self.projection: nn.Linear = nn.Linear(768, 128)
 
-    def forward(
-        self, input_ids: torch.Tensor, attention_mask: torch.Tensor
-    ) -> torch.Tensor:
+    def forward(self, input_ids: torch.Tensor, attention_mask: torch.Tensor) -> torch.Tensor:
         # Extract BERT embeddings
         outputs: Any = self.bert(input_ids=input_ids, attention_mask=attention_mask)
 
@@ -37,9 +35,7 @@ class VideoEncoder(nn.Module):
             param.requires_grad = False
 
         num_fts: int = self.backbone.fc.in_features
-        self.backbone.fc = nn.Sequential(
-            nn.Linear(num_fts, 128), nn.ReLU(), nn.Dropout(0.2)
-        )
+        self.backbone.fc = nn.Sequential(nn.Linear(num_fts, 128), nn.ReLU(), nn.Dropout(0.2))
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         # [batch_size, frames, channels, height, width]

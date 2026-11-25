@@ -10,8 +10,9 @@ Usage:
 import argparse
 
 import uvicorn
-from src.deployment.app import ALLOWED_ORIGINS
 from dotenv import load_dotenv
+
+from src.deployment.app import ALLOWED_ORIGINS
 
 load_dotenv()
 
@@ -43,9 +44,7 @@ def main() -> None:
         )
 
     # String import path so --reload can re-import the app in fresh processes
-    uvicorn.run(
-        "src.deployment.app:app", host=args.host, port=args.port, reload=args.reload
-    )
+    uvicorn.run("src.deployment.app:app", host=args.host, port=args.port, reload=args.reload)
 
 
 if __name__ == "__main__":

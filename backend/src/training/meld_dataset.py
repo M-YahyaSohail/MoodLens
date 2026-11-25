@@ -29,9 +29,7 @@ def _load_pcm_wav(audio_path: str) -> tuple[torch.Tensor, int]:
     samples: np.ndarray = np.frombuffer(frames, dtype=np.int16)
     if channels > 1:
         samples = samples.reshape(-1, channels).mean(axis=1)
-    waveform: torch.Tensor = (
-        torch.from_numpy(samples.astype(np.float32) / 32768.0).unsqueeze(0)
-    )
+    waveform: torch.Tensor = torch.from_numpy(samples.astype(np.float32) / 32768.0).unsqueeze(0)
     return waveform, sample_rate
 
 
@@ -41,9 +39,7 @@ class MELDDataset(Dataset):
 
         self.video_dir: str = video_dir
 
-        self.tokenizer: AutoTokenizer = AutoTokenizer.from_pretrained(
-            "bert-base-uncased"
-        )
+        self.tokenizer: Any = AutoTokenizer.from_pretrained("bert-base-uncased")
 
         self.emotion_map: dict[str, int] = {
             "anger": 0,
@@ -83,7 +79,7 @@ class MELDDataset(Dataset):
                 frames.append(frame)
 
         except Exception as e:
-            raise ValueError(f"Video error: {str(e)}")
+            raise ValueError(f"Video error: {e!s}")
         finally:
             cap.release()
 
@@ -147,9 +143,9 @@ class MELDDataset(Dataset):
             return mel_spec
 
         except subprocess.CalledProcessError as e:
-            raise ValueError(f"Audio extraction error: {str(e)}")
+            raise ValueError(f"Audio extraction error: {e!s}")
         except Exception as e:
-            raise ValueError(f"Audio error: {str(e)}")
+            raise ValueError(f"Audio error: {e!s}")
         finally:
             if os.path.exists(audio_path):
                 os.remove(audio_path)
@@ -157,10 +153,10 @@ class MELDDataset(Dataset):
     def __len__(self) -> int:
         return len(self.data)
 
-    def __getitem__(self, idx: int) -> dict[str, Any] | None:
-        if isinstance(idx, torch.Tensor):
-            idx = idx.item()
-        row: Any = self.data.iloc[idx]
+    def __getitem__(self, index: int) -> dict[str, Any] | None:
+        if isinstance(index, torch.Tensor):
+            index = int(index.item())
+        row: Any = self.data.iloc[index]
 
         try:
             video_filename: str = f"""dia{row["Dialogue_ID"]}_utt{row["Utterance_ID"]}.mp4"""
@@ -168,7 +164,7 @@ class MELDDataset(Dataset):
             path: str = os.path.join(self.video_dir, video_filename)
             video_path_exists: bool = os.path.exists(path)
 
-            if video_path_exists == False:
+            if not video_path_exists:
                 raise FileNotFoundError(f"No video found for filename: {path}")
 
             text_inputs: Any = self.tokenizer(
@@ -197,7 +193,7 @@ class MELDDataset(Dataset):
                 "sentiment_label": torch.tensor(sentiment_label),
             }
         except Exception as e:
-            print(f"Error processing {path}: {str(e)}")
+            print(f"Error processing {path}: {e!s}")
             return None
 
 
@@ -224,13 +220,9 @@ def prepare_dataloaders(
         train_dataset, batch_size=batch_size, shuffle=True, collate_fn=collate_fn
     )
 
-    dev_loader: DataLoader = DataLoader(
-        dev_dataset, batch_size=batch_size, collate_fn=collate_fn
-    )
+    dev_loader: DataLoader = DataLoader(dev_dataset, batch_size=batch_size, collate_fn=collate_fn)
 
-    test_loader: DataLoader = DataLoader(
-        test_dataset, batch_size=batch_size, collate_fn=collate_fn
-    )
+    test_loader: DataLoader = DataLoader(test_dataset, batch_size=batch_size, collate_fn=collate_fn)
 
     return train_loader, dev_loader, test_loader
 

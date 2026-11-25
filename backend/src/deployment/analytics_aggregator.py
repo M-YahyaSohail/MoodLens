@@ -1,10 +1,10 @@
-from collections import Counter
 import csv
-from dataclasses import dataclass
+import itertools
 import json
+from collections import Counter
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
-
 
 EMOTION_LABELS = ("anger", "disgust", "fear", "joy", "neutral", "sadness", "surprise")
 SENTIMENT_LABELS = ("negative", "neutral", "positive")
@@ -96,7 +96,7 @@ def detect_mood_shifts(
 ) -> list[dict[str, Any]]:
     shifts: list[dict[str, Any]] = []
 
-    for prev, curr in zip(metrics, metrics[1:]):
+    for prev, curr in itertools.pairwise(metrics):
         if prev.emotion_confidence < min_confidence or curr.emotion_confidence < min_confidence:
             continue
 
@@ -147,11 +147,9 @@ def summarize_video_analytics(
     emo_counts: Counter[str] = Counter(m.top_emotion for m in metrics)
     sent_counts: Counter[str] = Counter(m.top_sentiment for m in metrics)
 
-    emo_durations: dict[str, float] = {label: 0.0 for label in EMOTION_LABELS}
+    emo_durations: dict[str, float] = dict.fromkeys(EMOTION_LABELS, 0.0)
     for m in metrics:
-        emo_durations[m.top_emotion] = round(
-            emo_durations.get(m.top_emotion, 0.0) + m.duration, 3
-        )
+        emo_durations[m.top_emotion] = round(emo_durations.get(m.top_emotion, 0.0) + m.duration, 3)
 
     dominant_emotion = emo_counts.most_common(1)[0][0]
     dominant_sentiment = sent_counts.most_common(1)[0][0]
@@ -162,11 +160,7 @@ def summarize_video_analytics(
     peak = max(peak_candidates, key=lambda m: m.emotion_confidence)
 
     emotion_share_duration = (
-        {
-            label: round(dur / total_duration, 4)
-            for label, dur in emo_durations.items()
-            if dur > 0
-        }
+        {label: round(dur / total_duration, 4) for label, dur in emo_durations.items() if dur > 0}
         if total_duration > 0
         else {}
     )

@@ -12,8 +12,9 @@ import numpy as np
 import torch
 import torchaudio
 import whisper
-from src.deployment.models import MultimodalSentimentModel
 from transformers import AutoTokenizer
+
+from src.deployment.models import MultimodalSentimentModel
 
 EMOTION_MAP: dict[int, str] = {
     0: "anger",
@@ -41,15 +42,11 @@ def _load_pcm_wav(audio_path: str) -> tuple[torch.Tensor, int]:
     samples: np.ndarray = np.frombuffer(frames, dtype=np.int16)
     if channels > 1:
         samples = samples.reshape(-1, channels).mean(axis=1)
-    waveform: torch.Tensor = (
-        torch.from_numpy(samples.astype(np.float32) / 32768.0).unsqueeze(0)
-    )
+    waveform: torch.Tensor = torch.from_numpy(samples.astype(np.float32) / 32768.0).unsqueeze(0)
     return waveform, sample_rate
 
 
-DEFAULT_MODEL_DIR: str = os.path.join(
-    os.path.dirname(os.path.abspath(__file__)), "model"
-)
+DEFAULT_MODEL_DIR: str = os.path.join(os.path.dirname(os.path.abspath(__file__)), "model")
 MODEL_REPO_ID: str = os.environ.get("MOODLENS_MODEL_REPO", "zeoxd/moodlens")
 
 
@@ -60,9 +57,7 @@ def ensure_ffmpeg() -> bool:
     if ffmpeg_path is None:
         print("FFmpeg not found on PATH.")
         print("Install it so the 'ffmpeg' command is accessible, e.g.:")
-        print(
-            "  - Windows: winget install Gyan.FFmpeg  (or download from https://ffmpeg.org)"
-        )
+        print("  - Windows: winget install Gyan.FFmpeg  (or download from https://ffmpeg.org)")
         print("  - macOS:   brew install ffmpeg")
         print("  - Linux:   sudo apt install ffmpeg")
         return False
@@ -98,7 +93,7 @@ class VideoProcessor:
                 frames.append(frame)
 
         except Exception as e:
-            raise ValueError(f"Video error: {str(e)}")
+            raise ValueError(f"Video error: {e!s}")
         finally:
             cap.release()
 
@@ -140,7 +135,7 @@ class AudioProcessor:
                 stderr=subprocess.DEVNULL,
             )
 
-            waveform, sample_rate = _load_pcm_wav(audio_path)
+            waveform, _sample_rate = _load_pcm_wav(audio_path)
 
             mel_spectrogram = torchaudio.transforms.MelSpectrogram(
                 sample_rate=16000, n_mels=64, n_fft=1024, hop_length=512
@@ -160,9 +155,9 @@ class AudioProcessor:
             return mel_spec
 
         except subprocess.CalledProcessError as e:
-            raise ValueError(f"Audio extraction error: {str(e)}")
+            raise ValueError(f"Audio extraction error: {e!s}")
         except Exception as e:
-            raise ValueError(f"Audio error: {str(e)}")
+            raise ValueError(f"Audio error: {e!s}")
         finally:
             if os.path.exists(audio_path):
                 os.remove(audio_path)
@@ -183,9 +178,7 @@ class VideoUtteranceProcessor:
         # Reject empty/negative-length segments (Whisper can emit start==end
         # markers); ffmpeg fails on these and floods logs otherwise
         if end_time <= start_time:
-            raise ValueError(
-                f"Segment has invalid duration: {start_time} - {end_time}"
-            )
+            raise ValueError(f"Segment has invalid duration: {start_time} - {end_time}")
 
         os.makedirs(temp_dir, exist_ok=True)
         # Unique name prevents collisions between concurrent processes/users
@@ -237,8 +230,7 @@ def _resolve_model_path() -> str:
         return path
     except Exception as e:
         print(
-            f"Hugging Face download failed ({str(e)}). "
-            "Falling back to a local model.pth if available."
+            f"Hugging Face download failed ({e!s}). Falling back to a local model.pth if available."
         )
 
     local_candidates: list[str] = [
@@ -251,8 +243,7 @@ def _resolve_model_path() -> str:
             return path
 
     raise FileNotFoundError(
-        f"Unable to fetch model weights from '{MODEL_REPO_ID}' and no local "
-        "model.pth was found."
+        f"Unable to fetch model weights from '{MODEL_REPO_ID}' and no local model.pth was found."
     )
 
 
@@ -261,17 +252,13 @@ def model_fn() -> dict[str, Any]:
     if not ensure_ffmpeg():
         raise RuntimeError("FFmpeg installation failed - required for inference")
 
-    device: torch.device = torch.device(
-        "cuda" if torch.cuda.is_available() else "cpu"
-    )
+    device: torch.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model: MultimodalSentimentModel = MultimodalSentimentModel().to(device)
 
     model_path: str = _resolve_model_path()
 
     print("Loading model from path: " + model_path)
-    model.load_state_dict(
-        torch.load(model_path, map_location=device, weights_only=True)
-    )
+    model.load_state_dict(torch.load(model_path, map_location=device, weights_only=True))
     model.eval()
 
     return {
@@ -305,11 +292,11 @@ def predict_fn(
                 video_path, segment["start"], segment["end"]
             )
 
-            video_frames: torch.Tensor = (
-                utterance_processor.video_processor.process_video(segment_path)
+            video_frames: torch.Tensor = utterance_processor.video_processor.process_video(
+                segment_path
             )
-            audio_features: torch.Tensor = (
-                utterance_processor.audio_processor.extract_features(segment_path)
+            audio_features: torch.Tensor = utterance_processor.audio_processor.extract_features(
+                segment_path
             )
             text_inputs: Any = tokenizer(
                 segment["text"],
@@ -326,13 +313,9 @@ def predict_fn(
 
             # Get predictions
             with torch.inference_mode():
-                outputs: dict[str, torch.Tensor] = model(
-                    text_inputs, video_frames, audio_features
-                )
+                outputs: dict[str, torch.Tensor] = model(text_inputs, video_frames, audio_features)
                 emotion_probs: torch.Tensor = torch.softmax(outputs["emotions"], dim=1)[0]
-                sentiment_probs: torch.Tensor = torch.softmax(
-                    outputs["sentiments"], dim=1
-                )[0]
+                sentiment_probs: torch.Tensor = torch.softmax(outputs["sentiments"], dim=1)[0]
 
                 emotion_values: torch.Tensor
                 emotion_indices: torch.Tensor
@@ -351,14 +334,14 @@ def predict_fn(
                             "label": EMOTION_MAP[idx.item()],
                             "confidence": conf.item(),
                         }
-                        for idx, conf in zip(emotion_indices, emotion_values)
+                        for idx, conf in zip(emotion_indices, emotion_values, strict=False)
                     ],
                     "sentiments": [
                         {
                             "label": SENTIMENT_MAP[idx.item()],
                             "confidence": conf.item(),
                         }
-                        for idx, conf in zip(sentiment_indices, sentiment_values)
+                        for idx, conf in zip(sentiment_indices, sentiment_values, strict=False)
                     ],
                 }
             )
@@ -382,10 +365,7 @@ def process_local_video(video_path: str) -> None:
 
     for utterance in predictions["utterances"]:
         print("\nUtterance:")
-        print(
-            f"""Start: {utterance['start_time']}s, End: {
-                  utterance['end_time']}s"""
-        )
+        print(f"""Start: {utterance["start_time"]}s, End: {utterance["end_time"]}s""")
         print(f"Text: {utterance['text']}")
         print("\n Top Emotions:")
         for emotion in utterance["emotions"]:

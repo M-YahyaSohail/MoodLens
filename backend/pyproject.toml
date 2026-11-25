@@ -38,3 +38,36 @@ dev = [
     "ruff>=0.17.6",
     "ty>=0.0.110",
 ]
+
+[tool.ruff]
+target-version = "py314"
+line-length = 100
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle errors
+    "F",   # pyflakes
+    "I",   # isort
+    "B",   # bugbear
+    "UP",  # pyupgrade
+    "C4",  # flake8-comprehensions
+    "PIE", # flake8-pie
+    "RUF", # ruff-specific rules
+    "TCH", # flake8-type-checking
+    "TID", # flake8-tidy-imports
+]
+ignore = [
+    "E501",   # line too long (formatter keeps lines short)
+    "B008",   # function calls in default arguments (argparse defaults)
+    "B904",   # exception chaining style (kept explicit for readability)
+    "FBT001", # boolean positional argument in function definition
+    "FBT002", # boolean default value in function definition
+    "TCH003", # move import out of type-checking block (n/a here)
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["E402"]
+
+[tool.ruff.format]
+
+[tool.ty]

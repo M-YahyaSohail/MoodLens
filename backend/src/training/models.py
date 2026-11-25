@@ -3,11 +3,12 @@ from typing import Any
 
 import torch
 from sklearn.metrics import accuracy_score, precision_score
-from src.training.meld_dataset import MELDDataset
 from torch import nn
 from torch.utils.tensorboard import SummaryWriter
 from torchvision import models as vision_models
 from transformers import BertModel
+
+from src.training.meld_dataset import MELDDataset
 
 
 class TextEncoder(nn.Module):
@@ -20,9 +21,7 @@ class TextEncoder(nn.Module):
 
         self.projection: nn.Linear = nn.Linear(768, 128)
 
-    def forward(
-        self, input_ids: torch.Tensor, attention_mask: torch.Tensor
-    ) -> torch.Tensor:
+    def forward(self, input_ids: torch.Tensor, attention_mask: torch.Tensor) -> torch.Tensor:
         # Extract BERT embeddings
         outputs: Any = self.bert(input_ids=input_ids, attention_mask=attention_mask)
 
@@ -41,9 +40,7 @@ class VideoEncoder(nn.Module):
             param.requires_grad = False
 
         num_fts: int = self.backbone.fc.in_features
-        self.backbone.fc = nn.Sequential(
-            nn.Linear(num_fts, 128), nn.ReLU(), nn.Dropout(0.2)
-        )
+        self.backbone.fc = nn.Sequential(nn.Linear(num_fts, 128), nn.ReLU(), nn.Dropout(0.2))
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         # [batch_size, frames, channels, height, width]
@@ -196,9 +193,7 @@ def compute_class_weights(dataset: MELDDataset) -> tuple[torch.Tensor, torch.Ten
 
 
 class MultimodalTrainer:
-    def __init__(
-        self, model: MultimodalSentimentModel, train_loader: Any, val_loader: Any
-    ) -> None:
+    def __init__(self, model: MultimodalSentimentModel, train_loader: Any, val_loader: Any) -> None:
         self.model: MultimodalSentimentModel = model
         self.train_loader: Any = train_loader
         self.val_loader: Any = val_loader
@@ -239,9 +234,7 @@ class MultimodalTrainer:
 
         # Calculate class weights
         print("\nCalculating class weights...")
-        emotion_weights, sentiment_weights = compute_class_weights(
-            train_loader.dataset
-        )
+        emotion_weights, sentiment_weights = compute_class_weights(train_loader.dataset)
 
         device: torch.device = next(model.parameters()).device
 
@@ -271,30 +264,22 @@ class MultimodalTrainer:
             train_losses = self.current_train_losses
             if train_losses is None:
                 raise RuntimeError("train_epoch must be called before evaluate")
-            self.writer.add_scalar(
-                "loss/total/train", train_losses["total"], self.global_step
-            )
-            self.writer.add_scalar(
-                "loss/total/val", losses["total"], self.global_step
-            )
+            self.writer.add_scalar("loss/total/train", train_losses["total"], self.global_step)
+            self.writer.add_scalar("loss/total/val", losses["total"], self.global_step)
 
             self.writer.add_scalar(
                 "loss/emotion/train",
                 train_losses["emotion"],
                 self.global_step,
             )
-            self.writer.add_scalar(
-                "loss/emotion/val", losses["emotion"], self.global_step
-            )
+            self.writer.add_scalar("loss/emotion/val", losses["emotion"], self.global_step)
 
             self.writer.add_scalar(
                 "loss/sentiment/train",
                 train_losses["sentiment"],
                 self.global_step,
             )
-            self.writer.add_scalar(
-                "loss/sentiment/val", losses["sentiment"], self.global_step
-            )
+            self.writer.add_scalar("loss/sentiment/val", losses["sentiment"], self.global_step)
 
         if metrics:
             self.writer.add_scalar(
@@ -337,14 +322,10 @@ class MultimodalTrainer:
             self.optimizer.zero_grad()
 
             # Forward pass
-            outputs: dict[str, torch.Tensor] = self.model(
-                text_inputs, video_frames, audio_features
-            )
+            outputs: dict[str, torch.Tensor] = self.model(text_inputs, video_frames, audio_features)
 
             # Calculate losses using raw logits
-            emotion_loss: torch.Tensor = self.emotion_criterion(
-                outputs["emotions"], emotion_labels
-            )
+            emotion_loss: torch.Tensor = self.emotion_criterion(outputs["emotions"], emotion_labels)
             sentiment_loss: torch.Tensor = self.sentiment_criterion(
                 outputs["sentiments"], sentiment_labels
             )
@@ -409,13 +390,9 @@ class MultimodalTrainer:
                 )
                 total_loss: torch.Tensor = emotion_loss + sentiment_loss
 
-                all_emotion_preds.extend(
-                    outputs["emotions"].argmax(dim=1).cpu().tolist()
-                )
+                all_emotion_preds.extend(outputs["emotions"].argmax(dim=1).cpu().tolist())
                 all_emotion_labels.extend(emotion_labels.cpu().tolist())
-                all_sentiment_preds.extend(
-                    outputs["sentiments"].argmax(dim=1).cpu().tolist()
-                )
+                all_sentiment_preds.extend(outputs["sentiments"].argmax(dim=1).cpu().tolist())
                 all_sentiment_labels.extend(sentiment_labels.cpu().tolist())
 
                 # Track losses
@@ -423,27 +400,17 @@ class MultimodalTrainer:
                 losses["emotion"] += emotion_loss.item()
                 losses["sentiment"] += sentiment_loss.item()
 
-        avg_loss: dict[str, float] = {
-            k: v / len(data_loader) for k, v in losses.items()
-        }
+        avg_loss: dict[str, float] = {k: v / len(data_loader) for k, v in losses.items()}
 
         # Compute the precision and accuracy
         emotion_precision: float = float(
-            precision_score(
-                all_emotion_labels, all_emotion_preds, average="weighted"
-            )
+            precision_score(all_emotion_labels, all_emotion_preds, average="weighted")
         )
-        emotion_accuracy: float = float(
-            accuracy_score(all_emotion_labels, all_emotion_preds)
-        )
+        emotion_accuracy: float = float(accuracy_score(all_emotion_labels, all_emotion_preds))
         sentiment_precision: float = float(
-            precision_score(
-                all_sentiment_labels, all_sentiment_preds, average="weighted"
-            )
+            precision_score(all_sentiment_labels, all_sentiment_preds, average="weighted")
         )
-        sentiment_accuracy: float = float(
-            accuracy_score(all_sentiment_labels, all_sentiment_preds)
-        )
+        sentiment_accuracy: float = float(accuracy_score(all_sentiment_labels, all_sentiment_preds))
 
         self.log_metrics(
             avg_loss,
@@ -473,6 +440,8 @@ if __name__ == "__main__":
     )
 
     sample: dict[str, Any] | None = dataset[0]
+    if sample is None:
+        raise RuntimeError("Dataset returned no samples")
 
     model: MultimodalSentimentModel = MultimodalSentimentModel()
     model.eval()

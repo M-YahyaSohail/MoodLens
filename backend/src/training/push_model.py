@@ -16,7 +16,12 @@ REPO_ID: str = os.environ.get("MOODLENS_MODEL_REPO", "zeoxd/moodlens")
 MODEL_PATH: str = os.path.abspath(
     os.path.join(
         os.path.dirname(os.path.abspath(__file__)),
-        "..", "..", "src", "deployment", "model", "model.pth",
+        "..",
+        "..",
+        "src",
+        "deployment",
+        "model",
+        "model.pth",
     )
 )
 

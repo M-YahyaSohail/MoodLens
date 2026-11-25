@@ -5,10 +5,11 @@ from typing import Any
 
 import torch
 import torchaudio
+from tqdm import tqdm
+
 from src.training.install_ffmpeg import ensure_ffmpeg
 from src.training.meld_dataset import prepare_dataloaders
 from src.training.models import MultimodalSentimentModel, MultimodalTrainer
-from tqdm import tqdm
 
 os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
 
@@ -34,12 +35,11 @@ def main() -> None:
         sys.exit(1)
 
     print("Available audio backends:")
-    print(str(torchaudio.list_audio_backends()))
+    list_audio_backends = getattr(torchaudio, "list_audio_backends", None)
+    print(str(list_audio_backends() if list_audio_backends else []))
 
     args: argparse.Namespace = parse_args()
-    device: torch.device = torch.device(
-        "cuda" if torch.cuda.is_available() else "cpu"
-    )
+    device: torch.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     # Track initial GPU memory if available
     if torch.cuda.is_available():
@@ -60,17 +60,11 @@ def main() -> None:
         batch_size=args.batch_size,
     )
 
-    print(
-        f"""Training DSV path: {os.path.join(args.train_dir, "train_sent_emo.csv")}"""
-    )
-    print(
-        f"""Training video directory: {os.path.join(args.train_dir, "train_splits")}"""
-    )
+    print(f"""Training DSV path: {os.path.join(args.train_dir, "train_sent_emo.csv")}""")
+    print(f"""Training video directory: {os.path.join(args.train_dir, "train_splits")}""")
 
     model: MultimodalSentimentModel = MultimodalSentimentModel().to(device)
-    trainer: MultimodalTrainer = MultimodalTrainer(
-        model, train_loader, val_loader
-    )
+    trainer: MultimodalTrainer = MultimodalTrainer(model, train_loader, val_loader)
     best_val_loss: float = float("inf")
 
     metrics_data: dict[str, Any] = {

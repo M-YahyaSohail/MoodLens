@@ -8,9 +8,7 @@ def ensure_ffmpeg() -> bool:
     if ffmpeg_path is None:
         print("FFmpeg not found on PATH.")
         print("Install it so the 'ffmpeg' command is accessible, e.g.:")
-        print(
-            "  - Windows: winget install Gyan.FFmpeg  (or download from https://ffmpeg.org)"
-        )
+        print("  - Windows: winget install Gyan.FFmpeg  (or download from https://ffmpeg.org)")
         print("  - macOS:   brew install ffmpeg")
         print("  - Linux:   sudo apt install ffmpeg")
         return False
