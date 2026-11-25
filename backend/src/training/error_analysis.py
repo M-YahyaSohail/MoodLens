@@ -88,9 +88,7 @@ def analyze_checkpoint_errors(
         video_feat = model.video_encoder(video_frames)
         audio_feat = model.audio_encoder(audio_features)
 
-        full_fused = model.fusion_layer(
-            torch.cat([text_feat, video_feat, audio_feat], dim=1)
-        )
+        full_fused = model.fusion_layer(torch.cat([text_feat, video_feat, audio_feat], dim=1))
         full_emo_probs = torch.softmax(model.emotion_classifier(full_fused), dim=1)
         full_sent_probs = torch.softmax(model.sentiment_classifier(full_fused), dim=1)
 
@@ -163,9 +161,7 @@ def analyze_checkpoint_errors(
     high_conf_emotion_errors.sort(key=lambda item: item["confidence"], reverse=True)
     high_conf_sentiment_errors.sort(key=lambda item: item["confidence"], reverse=True)
 
-    consistency_rate = (
-        round(consistent_heads / total_samples, 4) if total_samples > 0 else 0.0
-    )
+    consistency_rate = round(consistent_heads / total_samples, 4) if total_samples > 0 else 0.0
 
     report = {
         "checkpoint": str(checkpoint_path),

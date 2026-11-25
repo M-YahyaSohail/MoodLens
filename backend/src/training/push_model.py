@@ -12,17 +12,22 @@ import os
 
 from huggingface_hub import create_repo, upload_file
 
-REPO_ID = os.environ.get("MOODLENS_MODEL_REPO", "zeoxd/moodlens")
-MODEL_PATH = os.path.abspath(
+REPO_ID: str = os.environ.get("MOODLENS_MODEL_REPO", "zeoxd/moodlens")
+MODEL_PATH: str = os.path.abspath(
     os.path.join(
         os.path.dirname(os.path.abspath(__file__)),
-        "..", "..", "src", "deployment", "model", "model.pth",
+        "..",
+        "..",
+        "src",
+        "deployment",
+        "model",
+        "model.pth",
     )
 )
 
 
-def main():
-    token = os.environ.get("HF_TOKEN") or None
+def main() -> None:
+    token: str | None = os.environ.get("HF_TOKEN") or None
     create_repo(REPO_ID, repo_type="model", exist_ok=True, token=token)
     upload_file(
         path_or_fileobj=str(MODEL_PATH),

@@ -3,8 +3,8 @@ import json
 from pathlib import Path
 from typing import Any
 
-from sklearn.metrics import accuracy_score, classification_report, confusion_matrix
 import torch
+from sklearn.metrics import accuracy_score, classification_report, confusion_matrix
 from torch.utils.data import DataLoader
 
 try:

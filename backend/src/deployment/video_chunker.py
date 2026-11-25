@@ -1,8 +1,8 @@
+import math
+import subprocess
 from collections import Counter
 from dataclasses import dataclass
-import math
 from pathlib import Path
-import subprocess
 from typing import Any
 
 

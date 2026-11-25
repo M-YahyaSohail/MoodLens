@@ -1,8 +1,14 @@
 from src.training.models import MultimodalSentimentModel
 
 
-def count_parameters(model):
-    params_dict = {
+def count_parameters(
+    model: MultimodalSentimentModel,
+) -> tuple[dict[str, int], int]:
+    """Return a per-component trainable parameter breakdown and the total count.
+
+    Only parameters with ``requires_grad == True`` are counted.
+    """
+    params_dict: dict[str, int] = {
         "text_encoder": 0,
         "video_encoder": 0,
         "audio_encoder": 0,

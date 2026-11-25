@@ -30,8 +30,10 @@ import os
 import tempfile
 import time
 from collections import defaultdict, deque
+from collections.abc import AsyncGenerator
 from concurrent.futures import ThreadPoolExecutor
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
+from typing import Any
 
 import cv2
 from fastapi import FastAPI, File, HTTPException, Request, UploadFile
@@ -41,32 +43,31 @@ from fastapi.responses import JSONResponse
 from src.deployment.inference import ensure_ffmpeg, model_fn, predict_fn
 
 # --- Configuration (all values overridable via environment variables) ---
-MAX_UPLOAD_SIZE_MB = int(os.environ.get("MOODLENS_MAX_UPLOAD_MB", "200"))
-MAX_VIDEO_DURATION_SEC = int(os.environ.get("MOODLENS_MAX_DURATION_SEC", "600"))
-MAX_CONCURRENT_INFERENCE = int(os.environ.get("MOODLENS_MAX_CONCURRENCY", "1"))
-INFERENCE_TIMEOUT_SEC = int(os.environ.get("MOODLENS_INFERENCE_TIMEOUT_SEC", "900"))
-RATE_LIMIT_REQUESTS = int(os.environ.get("MOODLENS_RATE_LIMIT_REQUESTS", "10"))
-RATE_LIMIT_WINDOW_SEC = int(os.environ.get("MOODLENS_RATE_LIMIT_WINDOW_SEC", "60"))
-ALLOWED_ORIGINS = [
+MAX_UPLOAD_SIZE_MB: int = int(os.environ.get("MOODLENS_MAX_UPLOAD_MB", "200"))
+MAX_VIDEO_DURATION_SEC: int = int(os.environ.get("MOODLENS_MAX_DURATION_SEC", "600"))
+MAX_CONCURRENT_INFERENCE: int = int(os.environ.get("MOODLENS_MAX_CONCURRENCY", "1"))
+INFERENCE_TIMEOUT_SEC: int = int(os.environ.get("MOODLENS_INFERENCE_TIMEOUT_SEC", "900"))
+RATE_LIMIT_REQUESTS: int = int(os.environ.get("MOODLENS_RATE_LIMIT_REQUESTS", "10"))
+RATE_LIMIT_WINDOW_SEC: int = int(os.environ.get("MOODLENS_RATE_LIMIT_WINDOW_SEC", "60"))
+ALLOWED_ORIGINS: list[str] = [
     origin.strip()
     for origin in os.environ.get("MOODLENS_ALLOWED_ORIGINS", "").split(",")
     if origin.strip()
 ]
 
-MAX_UPLOAD_BYTES = MAX_UPLOAD_SIZE_MB * 1024 * 1024
-CHUNK_SIZE = 1024 * 1024  # 1 MiB
+MAX_UPLOAD_BYTES: int = MAX_UPLOAD_SIZE_MB * 1024 * 1024
+CHUNK_SIZE: int = 1024 * 1024  # 1 MiB
 
-logger = logging.getLogger("moodlens.api")
+logger: logging.Logger = logging.getLogger("moodlens.api")
 
 # Single long-running state, initialized on startup
-_MODEL: dict | None = None
+_MODEL: dict[str, Any] | None = None
 
 # Inference runs on a bounded thread pool so it never degrades API responsiveness
-_inference_slots = asyncio.Semaphore(MAX_CONCURRENT_INFERENCE)
-_inference_executor = ThreadPoolExecutor(
+_inference_slots: asyncio.Semaphore = asyncio.Semaphore(MAX_CONCURRENT_INFERENCE)
+_inference_executor: ThreadPoolExecutor = ThreadPoolExecutor(
     max_workers=MAX_CONCURRENT_INFERENCE, thread_name_prefix="moodlens"
 )
-
 
 # --- Validation helpers -----------------------------------------------------
 
@@ -108,9 +109,11 @@ async def save_upload_to_temp_file(file: UploadFile) -> str:
     The client-provided filename is ignored entirely (no path traversal or
     name-based tricks). Returns the temp path; raises on invalid input.
     """
+    fd: int
+    temp_path: str
     fd, temp_path = tempfile.mkstemp(prefix="moodlens_", suffix=".mp4")
 
-    first_chunk = await file.read(CHUNK_SIZE)
+    first_chunk: bytes = await file.read(CHUNK_SIZE)
 
     if not first_chunk:
         os.close(fd)
@@ -127,11 +130,9 @@ async def save_upload_to_temp_file(file: UploadFile) -> str:
     if len(first_chunk) > MAX_UPLOAD_BYTES:
         os.close(fd)
         os.remove(temp_path)
-        raise VideoTooLargeError(
-            f"Uploaded file exceeds the {MAX_UPLOAD_SIZE_MB} MB limit"
-        )
+        raise VideoTooLargeError(f"Uploaded file exceeds the {MAX_UPLOAD_SIZE_MB} MB limit")
 
-    total = len(first_chunk)
+    total: int = len(first_chunk)
     try:
         with os.fdopen(fd, "wb") as out:
             out.write(first_chunk)
@@ -143,10 +144,8 @@ async def save_upload_to_temp_file(file: UploadFile) -> str:
                     )
                 out.write(chunk)
     except BaseException:
-        try:
+        with suppress(OSError):
             os.remove(temp_path)
-        except OSError:
-            pass
         raise
 
     logger.info("Received upload of %.1f MB", total / (1024 * 1024))
@@ -155,12 +154,12 @@ async def save_upload_to_temp_file(file: UploadFile) -> str:
 
 def _probe_duration(path: str) -> float:
     """Read the video's fps/frame metadata to get its duration in seconds."""
-    cap = cv2.VideoCapture(path)
+    cap: Any = cv2.VideoCapture(path)
     try:
         if not cap.isOpened():
             raise VideoNotReadableError("Video could not be opened for inspection")
-        fps = cap.get(cv2.CAP_PROP_FPS)
-        frame_count = cap.get(cv2.CAP_PROP_FRAME_COUNT)
+        fps: float = cap.get(cv2.CAP_PROP_FPS)
+        frame_count: float = cap.get(cv2.CAP_PROP_FRAME_COUNT)
     finally:
         cap.release()
 
@@ -173,15 +172,15 @@ def _probe_duration(path: str) -> float:
 class SlidingWindowRateLimiter:
     """Simple in-memory per-client rate limiter (no external dependencies)."""
 
-    def __init__(self, limit: int, window_sec: int):
-        self._limit = limit
-        self._window_sec = window_sec
-        self._hits: dict[str, deque] = defaultdict(deque)
+    def __init__(self, limit: int, window_sec: int) -> None:
+        self._limit: int = limit
+        self._window_sec: int = window_sec
+        self._hits: dict[str, deque[float]] = defaultdict(deque)
 
     def allow(self, client_key: str) -> bool:
-        now = time.monotonic()
-        cutoff = now - self._window_sec
-        hits = self._hits[client_key]
+        now: float = time.monotonic()
+        cutoff: float = now - self._window_sec
+        hits: deque[float] = self._hits[client_key]
 
         while hits and hits[0] <= cutoff:
             hits.popleft()
@@ -200,22 +199,28 @@ class SlidingWindowRateLimiter:
         return True
 
 
-_rate_limiter = SlidingWindowRateLimiter(RATE_LIMIT_REQUESTS, RATE_LIMIT_WINDOW_SEC)
+_rate_limiter: SlidingWindowRateLimiter = SlidingWindowRateLimiter(
+    RATE_LIMIT_REQUESTS, RATE_LIMIT_WINDOW_SEC
+)
 
 
 # --- Inference ---------------------------------------------------------------
 
 
-async def _run_inference(video_path: str) -> dict:
-    def _worker():
-        return predict_fn({"video_path": video_path}, _MODEL)
+async def _run_inference(video_path: str) -> dict[str, Any]:
+    model = _MODEL
+    if model is None:
+        raise RuntimeError("Model not loaded")
 
-    loop = asyncio.get_running_loop()
-    return await loop.run_in_executor(_inference_executor, _worker)
+    def _worker(m: dict[str, Any]) -> dict[str, Any]:
+        return predict_fn({"video_path": video_path}, m)
+
+    loop: asyncio.AbstractEventLoop = asyncio.get_running_loop()
+    return await loop.run_in_executor(_inference_executor, _worker, model)
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI):
+async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     global _MODEL
 
     if not ensure_ffmpeg():
@@ -225,7 +230,7 @@ async def lifespan(app: FastAPI):
         )
 
     logger.info("Loading model, tokenizer and Whisper transcriber...")
-    loop = asyncio.get_running_loop()
+    loop: asyncio.AbstractEventLoop = asyncio.get_running_loop()
     _MODEL = await loop.run_in_executor(None, model_fn)
     logger.info("Model ready - accepting requests")
 
@@ -234,7 +239,7 @@ async def lifespan(app: FastAPI):
     _inference_executor.shutdown(wait=False)
 
 
-app = FastAPI(
+app: FastAPI = FastAPI(
     title="MoodLens API",
     description="Multimodal emotion & sentiment analysis for videos (local inference)",
     version="1.0.0",
@@ -255,7 +260,7 @@ if ALLOWED_ORIGINS:
 
 
 @app.get("/health")
-async def health():
+async def health() -> dict[str, str | bool]:
     return {
         "status": "ok",
         "model_loaded": _MODEL is not None,
@@ -263,9 +268,9 @@ async def health():
 
 
 @app.post("/analyze/video")
-async def analyze_video(request: Request, video: UploadFile = File(...)):
+async def analyze_video(request: Request, video: UploadFile = File(...)) -> JSONResponse:
     # 1. Per-client rate limiting
-    client_key = request.client.host if request.client else "unknown"
+    client_key: str = request.client.host if request.client else "unknown"
     if not _rate_limiter.allow(client_key):
         raise HTTPException(
             status_code=429,
@@ -274,39 +279,33 @@ async def analyze_video(request: Request, video: UploadFile = File(...)):
         )
 
     # 2. Cheap early size check before consuming any body bytes
-    declared_length = request.headers.get("content-length")
+    declared_length: str | None = request.headers.get("content-length")
     if declared_length:
         try:
             if int(declared_length) > MAX_UPLOAD_BYTES + 2 * 1024 * 1024:
                 raise HTTPException(
                     status_code=413,
-                    detail=(
-                        f"Request body exceeds the {MAX_UPLOAD_SIZE_MB} MB upload limit"
-                    ),
+                    detail=(f"Request body exceeds the {MAX_UPLOAD_SIZE_MB} MB upload limit"),
                 )
         except ValueError:
-            raise HTTPException(
-                status_code=400, detail="Malformed Content-Length header"
-            )
+            raise HTTPException(status_code=400, detail="Malformed Content-Length header")
 
     # 3. Fail fast if all inference capacity is taken
     if _inference_slots.locked() or _MODEL is None:
         raise HTTPException(
             status_code=503,
-            detail=(
-                "Server busy: the analysis pipeline is at capacity. Try again shortly."
-            ),
+            detail=("Server busy: the analysis pipeline is at capacity. Try again shortly."),
             headers={"Retry-After": "30"},
         )
 
-    temp_path = None
+    temp_path: str | None = None
     try:
         # 4. Streaming validation + capped write to disk
         temp_path = await save_upload_to_temp_file(video)
 
         # 5. Duration cap (fake/crafted very-long-duration files are the typical
         #    DoS vector for automated transcription pipelines)
-        duration = await asyncio.to_thread(_probe_duration, temp_path)
+        duration: float = await asyncio.to_thread(_probe_duration, temp_path)
         if duration > MAX_VIDEO_DURATION_SEC:
             raise VideoTooLongError(
                 f"Video is {duration:.0f}s; the limit is {MAX_VIDEO_DURATION_SEC}s"
@@ -315,7 +314,7 @@ async def analyze_video(request: Request, video: UploadFile = File(...)):
 
         # 6. Inference with concurrency limit and hard timeout
         async with _inference_slots:
-            result = await asyncio.wait_for(
+            result: dict[str, Any] = await asyncio.wait_for(
                 _run_inference(temp_path), timeout=INFERENCE_TIMEOUT_SEC
             )
 
@@ -327,7 +326,7 @@ async def analyze_video(request: Request, video: UploadFile = File(...)):
         raise HTTPException(status_code=422, detail=str(e))
     except UploadValidationError as e:
         raise HTTPException(status_code=400, detail=str(e))
-    except asyncio.TimeoutError:
+    except TimeoutError:
         logger.error("Inference timed out after %ss", INFERENCE_TIMEOUT_SEC)
         raise HTTPException(
             status_code=504,
@@ -338,9 +337,7 @@ async def analyze_video(request: Request, video: UploadFile = File(...)):
     except Exception:
         # Never leak library stack traces to clients - log them instead
         logger.exception("Unhandled error while processing upload")
-        raise HTTPException(
-            status_code=500, detail="Internal error while processing the video"
-        )
+        raise HTTPException(status_code=500, detail="Internal error while processing the video")
     finally:
         # 7. Temporary file is always cleaned up, success or failure
         if temp_path and os.path.exists(temp_path):

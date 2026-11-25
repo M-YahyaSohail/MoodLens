@@ -3,8 +3,8 @@ import json
 from pathlib import Path
 from typing import Any
 
-from sklearn.metrics import accuracy_score, f1_score
 import torch
+from sklearn.metrics import accuracy_score, f1_score
 from torch.utils.data import DataLoader, default_collate
 
 try:
@@ -96,20 +96,14 @@ def run_ablation_study(
             emo_logits = model.emotion_classifier(fused)
             sent_logits = model.sentiment_classifier(fused)
 
-            predictions[config_name]["emotions"].extend(
-                emo_logits.argmax(dim=1).cpu().tolist()
-            )
-            predictions[config_name]["sentiments"].extend(
-                sent_logits.argmax(dim=1).cpu().tolist()
-            )
+            predictions[config_name]["emotions"].extend(emo_logits.argmax(dim=1).cpu().tolist())
+            predictions[config_name]["sentiments"].extend(sent_logits.argmax(dim=1).cpu().tolist())
 
     results: dict[str, Any] = {}
     for config_name, preds in predictions.items():
         results[config_name] = {
             "active_modalities": list(MODALITY_CONFIGS[config_name]),
-            "emotion_accuracy": round(
-                float(accuracy_score(emo_targets, preds["emotions"])), 4
-            ),
+            "emotion_accuracy": round(float(accuracy_score(emo_targets, preds["emotions"])), 4),
             "emotion_macro_f1": round(
                 float(f1_score(emo_targets, preds["emotions"], average="macro", zero_division=0)),
                 4,
@@ -118,14 +112,16 @@ def run_ablation_study(
                 float(accuracy_score(sent_targets, preds["sentiments"])), 4
             ),
             "sentiment_macro_f1": round(
-                float(f1_score(sent_targets, preds["sentiments"], average="macro", zero_division=0)),
+                float(
+                    f1_score(sent_targets, preds["sentiments"], average="macro", zero_division=0)
+                ),
                 4,
             ),
         }
 
     baseline_emo_f1 = results["full_multimodal"]["emotion_macro_f1"]
     baseline_sent_f1 = results["full_multimodal"]["sentiment_macro_f1"]
-    for config_name, metrics in results.items():
+    for _, metrics in results.items():
         metrics["emotion_f1_delta_vs_full"] = round(
             metrics["emotion_macro_f1"] - baseline_emo_f1, 4
         )

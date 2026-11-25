@@ -1,10 +1,10 @@
-from collections import Counter
 import csv
 import json
-from pathlib import Path
 import sys
 import tempfile
 import unittest
+from collections import Counter
+from pathlib import Path
 
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
 BACKEND_SRC = BACKEND_ROOT / "src"
@@ -99,9 +99,7 @@ class TestAnalyticsAndChunker(unittest.TestCase):
     def test_export_csv_and_json_artifacts(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             tmp_path = Path(tmp_dir)
-            csv_out = export_utterances_csv(
-                self.sample_utterances, tmp_path / "utterances.csv"
-            )
+            csv_out = export_utterances_csv(self.sample_utterances, tmp_path / "utterances.csv")
             json_out = tmp_path / "analytics.json"
             summary = export_analytics_json(self.sample_utterances, json_out)
 
@@ -130,9 +128,7 @@ class TestAnalyticsAndChunker(unittest.TestCase):
     def test_dataset_profiler_and_head_consistency(self) -> None:
         self.assertEqual(compute_percentile([1.0, 2.0, 3.0, 4.0, 5.0], 50.0), 3.0)
 
-        weights = compute_inverse_weights(
-            Counter({"joy": 2, "neutral": 8}), ["joy", "neutral"]
-        )
+        weights = compute_inverse_weights(Counter({"joy": 2, "neutral": 8}), ["joy", "neutral"])
         self.assertAlmostEqual(weights["joy"], 0.8, places=4)
         self.assertAlmostEqual(weights["neutral"], 0.2, places=4)
 
