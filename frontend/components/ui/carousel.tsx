@@ -4,7 +4,7 @@ import * as React from "react"
 import { cn } from "cn"
 import useEmblaCarousel, {
   type UseEmblaCarouselType,
-} from "embla-carousel-react"
+} from "@animate-ui/react/primitives/carousel"
 
 import { Button } from "@/components/ui/button"
 import { CaretLeftIcon, CaretRightIcon } from "@phosphor-icons/react"
