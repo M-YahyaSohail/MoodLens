@@ -16,7 +16,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 
-def main():
+def main() -> None:
     parser = argparse.ArgumentParser(description="Run the MoodLens API server")
     parser.add_argument(
         "--host",
@@ -34,7 +34,7 @@ def main():
         action="store_true",
         help="Auto-restart the server when source files change (development)",
     )
-    args = parser.parse_args()
+    args: argparse.Namespace = parser.parse_args()
 
     if not ALLOWED_ORIGINS:
         print(

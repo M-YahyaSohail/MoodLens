@@ -1,9 +1,9 @@
 import shutil
 
 
-def ensure_ffmpeg():
+def ensure_ffmpeg() -> bool:
     """Verify that the FFmpeg binary is available on PATH for local use."""
-    ffmpeg_path = shutil.which("ffmpeg")
+    ffmpeg_path: str | None = shutil.which("ffmpeg")
 
     if ffmpeg_path is None:
         print("FFmpeg not found on PATH.")
